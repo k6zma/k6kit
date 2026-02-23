@@ -1,4 +1,11 @@
 # k6kit
+
+<div align="center">
+    <img src="img/logo.png" width=60%>
+</div>
+
+<p></p>
+
 <div align="center">
     <img src="https://img.shields.io/badge/status-active-success.svg"/>
     <img src="https://img.shields.io/github/issues/k6zma/k6kit.svg"/>
