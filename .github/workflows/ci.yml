@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MIN_COVERAGE: "70.0"
-      # CI runners are slower/noisier than local dev machines.
       BENCH_NO_FIELDS_MAX_NS: "600.0"
       BENCH_WITH_FIELDS_MAX_NS: "1600.0"
       BENCH_WITH_CONTEXT_MAX_NS: "1700.0"
