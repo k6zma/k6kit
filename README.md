@@ -17,6 +17,10 @@
 <div align="center">
     <img src="https://img.shields.io/badge/Go-black?style=for-the-badge&logo=go&logoColor=#00ADD8"/>
     <img src="https://img.shields.io/badge/OpenTelemetry-black?style=for-the-badge&logo=opentelemetry&logoColor=#00ADD8"/>
+    <img src="https://img.shields.io/badge/Task-black?style=for-the-badge&logo=task&logoColor=#00ADD8"/>
+    <img src="https://img.shields.io/badge/Pre--commit-black?style=for-the-badge&logo=pre-commit&logoColor=#00ADD8"/>
+    <img src="https://img.shields.io/badge/Github-black?style=for-the-badge&logo=github&logoColor=#00ADD8"/>
+    <img src="https://img.shields.io/badge/Git-black?style=for-the-badge&logo=git&logoColor=#00ADD8"/>
 </div>
 
 ---
@@ -68,7 +72,7 @@ Currently, the following utilities have been implemented:
 
 ---
 
-## Detailed information about the utility
+## Detailed information about the utilities
 
 ### Logger
 
