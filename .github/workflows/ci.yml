@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    env:
+      MIN_COVERAGE: "70.0"
+      BENCH_NO_FIELDS_MAX_NS: "260.0"
+      BENCH_WITH_FIELDS_MAX_NS: "760.0"
+      BENCH_WITH_CONTEXT_MAX_NS: "760.0"
+      BENCH_WITH_OTEL_MAX_NS: "460.0"
+      BENCH_DEBUG_DISABLED_MAX_NS: "25.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting (gofmt)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            printf 'These files need gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Race Test
+        run: go test -race ./...
+
+      - name: Coverage Threshold
+        run: bash ./scripts/coverage-guard.sh
+
+      - name: Benchmark Thresholds
+        run: bash ./scripts/bench-guard.sh

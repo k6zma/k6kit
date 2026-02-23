@@ -1,0 +1,32 @@
+repos:
+  - repo: local
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: bash -c 'if [ -x ./bin/golangci-lint ]; then ./bin/golangci-lint run ./... --config=.golangci.yml; else golangci-lint run ./... --config=.golangci.yml; fi'
+        language: system
+        pass_filenames: false
+
+      - id: go-test
+        name: go test
+        entry: go test ./...
+        language: system
+        pass_filenames: false
+
+      - id: go-test-race
+        name: go test -race
+        entry: go test -race ./...
+        language: system
+        pass_filenames: false
+
+      - id: coverage-guard
+        name: coverage guard
+        entry: bash ./scripts/coverage-guard.sh
+        language: system
+        pass_filenames: false
+
+      - id: benchmark-guard
+        name: benchmark guard
+        entry: bash ./scripts/bench-guard.sh
+        language: system
+        pass_filenames: false
