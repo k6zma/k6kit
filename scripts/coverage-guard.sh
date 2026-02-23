@@ -7,7 +7,6 @@ TEST_OUTPUT_FILE=".coverage-precommit.test.log"
 trap 'rm -f "$PROFILE_FILE"' EXIT
 MIN_COVERAGE="${MIN_COVERAGE:-70.0}"
 
-# Build package list excluding examples from test execution itself.
 packages="$(go list ./... | grep -v '/examples/')"
 if [ -z "$packages" ]; then
   echo "No packages found for coverage check"
