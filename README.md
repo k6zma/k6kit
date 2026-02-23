@@ -72,7 +72,7 @@ Currently, the following utilities have been implemented:
 
 ---
 
-## Detailed information about the utility
+## Detailed information about the utilities
 
 ### Logger
 
