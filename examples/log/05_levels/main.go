@@ -12,17 +12,16 @@ func main() {
 		Level:  log.LevelInfo,
 		Format: log.FormatText,
 		Color:  true,
+		ExitFunc: func(int) {
+		},
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	parsed, err := log.ParseLevel("warn")
-	if err != nil {
-		panic(err)
-	}
+	selected := log.LevelWarn
 
-	fmt.Println("parsed level:", parsed.String())
+	fmt.Println("selected level: WARN", selected)
 	fmt.Println("debug enabled:", l.Enabled(context.Background(), log.LevelDebug))
 	fmt.Println("info enabled:", l.Enabled(context.Background(), log.LevelInfo))
 

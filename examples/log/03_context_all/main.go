@@ -16,17 +16,20 @@ func main() {
 	ctx := context.Background()
 	ctx = log.WithLogger(ctx, base)
 	ctx = log.WithRequestID(ctx, "req-123")
-	ctx = log.WithRequestMetadata(ctx,
-		log.String("method", "GET"),
-		log.String("path", "/v1/orders"),
-	)
+	ctx = log.WithOtelTraceContext(ctx, "0123456789abcdef0123456789abcdef", "0123456789abcdef")
 
-	ctx = log.WithRequestMetadata(ctx, log.String("tenant", "acme"))
 	if rid, ok := log.RequestID(ctx); ok {
 		fmt.Println("request_id:", rid)
 	}
-	fmt.Println("request_metadata_count:", len(log.RequestMetadata(ctx)))
+	if otel, ok := log.OtelTraceFromContext(ctx); ok {
+		fmt.Printf("otel_trace: %s/%s\n", otel.TraceID, otel.SpanID)
+	}
 
 	fromCtx := log.FromContext(ctx, base)
-	fromCtx.InfoCtx(ctx, "context-aware log", log.String("event", "checkout"))
+	fromCtx.InfoCtx(ctx, "context-aware log",
+		log.String("event", "checkout"),
+		log.String("method", "GET"),
+		log.String("path", "/v1/orders"),
+		log.String("tenant", "acme"),
+	)
 }

@@ -1,108 +1,94 @@
 package log
 
-import "context"
+import (
+	"context"
 
-// context keys isolate package values stored in context
-type (
-	loggerCtxKey          struct{}
-	requestIDCtxKey       struct{}
-	requestMetadataCtxKey struct{}
+	"go.opentelemetry.io/otel/trace"
 )
 
-// normalizeContext converts nil context to context.Background
-func normalizeContext(ctx context.Context) context.Context {
-	if ctx == nil {
-		return context.Background()
-	}
+type (
+	// ctxLoggerKey stores k6kit logger instance in context
+	ctxLoggerKey struct{}
 
-	return ctx
+	// ctxRequestIDKey stores request id in context
+	ctxRequestIDKey struct{}
+
+	// ctxOtelKey stores explicit OTEL trace/span in context
+	ctxOtelKey struct{}
+)
+
+// OtelTrace carries OTEL trace and span identifiers
+type OtelTrace struct {
+	TraceID string
+	SpanID  string
 }
 
-// WithLogger stores logger in context and ignores nil logger
+// WithLogger stores k6kit logger in context
 func WithLogger(ctx context.Context, l Logger) context.Context {
 	ctx = normalizeContext(ctx)
 	if l == nil {
 		return ctx
 	}
 
-	return context.WithValue(ctx, loggerCtxKey{}, l)
+	return context.WithValue(ctx, ctxLoggerKey{}, l)
 }
 
-// FromContext returns logger from context or fallback when missing
+// FromContext returns context k6kit logger or fallback
 func FromContext(ctx context.Context, fallback Logger) Logger {
 	if ctx == nil {
 		return fallback
 	}
 
-	v, _ := ctx.Value(loggerCtxKey{}).(Logger)
-	if v != nil {
-		return v
+	l, _ := ctx.Value(ctxLoggerKey{}).(Logger)
+	if l != nil {
+		return l
 	}
 
 	return fallback
 }
 
-// WithRequestID stores request_id in context
-func WithRequestID(ctx context.Context, requestID string) context.Context {
+// WithRequestID stores request id in context
+func WithRequestID(ctx context.Context, id string) context.Context {
 	ctx = normalizeContext(ctx)
 
-	return context.WithValue(ctx, requestIDCtxKey{}, requestID)
+	return context.WithValue(ctx, ctxRequestIDKey{}, id)
 }
 
-// RequestID returns request_id from context when present and non empty
+// RequestID returns request id from context when present
 func RequestID(ctx context.Context) (string, bool) {
 	if ctx == nil {
 		return "", false
 	}
 
-	v, ok := ctx.Value(requestIDCtxKey{}).(string)
-	if !ok || v == "" {
+	id, ok := ctx.Value(ctxRequestIDKey{}).(string)
+	if !ok || id == "" {
 		return "", false
 	}
 
-	return v, true
+	return id, true
 }
 
-// WithRequestMetadata appends request-scoped metadata fields in context
-func WithRequestMetadata(ctx context.Context, fields ...Field) context.Context {
+// WithOtelTraceContext stores explicit OTEL trace/span into context
+func WithOtelTraceContext(ctx context.Context, traceID, spanID string) context.Context {
 	ctx = normalizeContext(ctx)
-	if len(fields) == 0 {
-		return ctx
-	}
 
-	existing := RequestMetadata(ctx)
-	out := make([]Field, 0, len(existing)+len(fields))
-
-	out = append(out, existing...)
-	out = append(out, fields...)
-
-	return context.WithValue(ctx, requestMetadataCtxKey{}, out)
+	return context.WithValue(ctx, ctxOtelKey{}, OtelTrace{TraceID: traceID, SpanID: spanID})
 }
 
-// RequestMetadata returns request-scoped metadata copied from context
-func RequestMetadata(ctx context.Context) []Field {
+// OtelTraceFromContext extracts OTEL trace/span from context
+func OtelTraceFromContext(ctx context.Context) (OtelTrace, bool) {
 	if ctx == nil {
-		return nil
+		return OtelTrace{}, false
 	}
 
-	v := requestMetadataUnsafe(ctx)
-	if len(v) == 0 {
-		return nil
+	if v, ok := ctx.Value(ctxOtelKey{}).(OtelTrace); ok && (v.TraceID != "" || v.SpanID != "") {
+		return v, true
 	}
 
-	out := make([]Field, len(v))
-	copy(out, v)
-
-	return out
-}
-
-// requestMetadataUnsafe returns request metadata from context without copying
-func requestMetadataUnsafe(ctx context.Context) []Field {
-	if ctx == nil {
-		return nil
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsValid() {
+		return OtelTrace{}, false
 	}
 
-	v, _ := ctx.Value(requestMetadataCtxKey{}).([]Field)
-
-	return v
+	return OtelTrace{TraceID: sc.TraceID().String(), SpanID: sc.SpanID().String()}, true
 }

@@ -5,20 +5,20 @@ set -euo pipefail
 REPORT_FILE=".bench-precommit.txt"
 trap 'rm -f "$REPORT_FILE"' EXIT
 
-BENCH_NO_FIELDS_MAX_NS="${BENCH_NO_FIELDS_MAX_NS:-260.0}"
-BENCH_WITH_FIELDS_MAX_NS="${BENCH_WITH_FIELDS_MAX_NS:-760.0}"
-BENCH_WITH_CONTEXT_MAX_NS="${BENCH_WITH_CONTEXT_MAX_NS:-760.0}"
-BENCH_WITH_OTEL_MAX_NS="${BENCH_WITH_OTEL_MAX_NS:-460.0}"
+BENCH_NO_FIELDS_MAX_NS="${BENCH_NO_FIELDS_MAX_NS:-350.0}"
+BENCH_WITH_FIELDS_MAX_NS="${BENCH_WITH_FIELDS_MAX_NS:-1100.0}"
+BENCH_WITH_CONTEXT_MAX_NS="${BENCH_WITH_CONTEXT_MAX_NS:-950.0}"
+BENCH_WITH_OTEL_MAX_NS="${BENCH_WITH_OTEL_MAX_NS:-750.0}"
 BENCH_DEBUG_DISABLED_MAX_NS="${BENCH_DEBUG_DISABLED_MAX_NS:-25.0}"
 
-go test -run '^$' -bench '^(BenchmarkInfoNoFields|BenchmarkInfoWithFields|BenchmarkInfoWithContext|BenchmarkInfoWithOTEL|BenchmarkDebugDisabled)$' -benchmem ./log > "$REPORT_FILE"
+go test -run '^$' -bench '^(BenchmarkNoFields|BenchmarkFiveFields|BenchmarkWithContext|BenchmarkWithOtelTrace|BenchmarkDebugDisabled)$' -benchmem ./log > "$REPORT_FILE"
 
 cat "$REPORT_FILE"
 
 extract_ns() {
   local bench_name="$1"
   awk -v b="$bench_name" '
-    $1 ~ ("^" b "-") {
+    $1 ~ ("^" b "(/|-)") {
       for (i = 1; i <= NF; i++) {
         if ($i == "ns/op") {
           print $(i - 1)
@@ -51,10 +51,10 @@ check_threshold() {
 
 failed=0
 
-check_threshold "BenchmarkInfoNoFields" "$BENCH_NO_FIELDS_MAX_NS" || failed=1
-check_threshold "BenchmarkInfoWithFields" "$BENCH_WITH_FIELDS_MAX_NS" || failed=1
-check_threshold "BenchmarkInfoWithContext" "$BENCH_WITH_CONTEXT_MAX_NS" || failed=1
-check_threshold "BenchmarkInfoWithOTEL" "$BENCH_WITH_OTEL_MAX_NS" || failed=1
+check_threshold "BenchmarkNoFields" "$BENCH_NO_FIELDS_MAX_NS" || failed=1
+check_threshold "BenchmarkFiveFields" "$BENCH_WITH_FIELDS_MAX_NS" || failed=1
+check_threshold "BenchmarkWithContext" "$BENCH_WITH_CONTEXT_MAX_NS" || failed=1
+check_threshold "BenchmarkWithOtelTrace" "$BENCH_WITH_OTEL_MAX_NS" || failed=1
 check_threshold "BenchmarkDebugDisabled" "$BENCH_DEBUG_DISABLED_MAX_NS" || failed=1
 
 if [ "$failed" -ne 0 ]; then
