@@ -16,9 +16,9 @@ func main() {
 	ctx := context.Background()
 	ctx = log.WithLogger(ctx, base)
 	ctx = log.WithRequestID(ctx, "req-with-777")
-	ctx = log.WithRequestMetadata(ctx, log.String("region", "eu-west"))
+	ctx = log.WithOtelTraceContext(ctx, "0123456789abcdef0123456789abcdef", "0123456789abcdef")
 
 	fromCtx := log.FromContext(ctx, base)
-	child := fromCtx.With(log.String("component", "worker")).WithGroup("jobs").WithErr(errors.New("retryable"))
-	child.InfoCtx(ctx, "with-tools example", log.String("job_id", "job-42"))
+	child := fromCtx.With(log.String("component", "worker")).WithGroup("jobs").WithErr(errors.New("retryable")).WithOtelTrace("fedcba9876543210fedcba9876543210", "fedcba9876543210")
+	child.InfoCtx(ctx, "with-tools example", log.String("job_id", "job-42"), log.String("region", "eu-west"))
 }

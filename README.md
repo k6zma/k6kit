@@ -82,23 +82,24 @@ It is designed for production use and keeps a clean API focused on practical log
 Key capabilities:
 - Text and JSON output formats
 - Optional colored text output
-- Context helpers (`WithLogger`, `FromContext`, `WithRequestID`, `WithRequestMetadata`)
+- Context helpers (`WithLogger`, `FromContext`, `WithRequestID`, `WithOtelTraceContext`)
 - Child logger tools (`With`, `WithErr`, `WithGroup`)
-- Optional source trace and OpenTelemetry trace/span extraction
+- Child logger context binding (`WithRequestID`, `WithOtelTrace`)
+- Optional source trace and OpenTelemetry trace/span extraction from context
 - Deterministic output rules for fields and key collisions
 
 Core API surface:
 - Level methods: `Debug`, `Info`, `Warn`, `Error`, `Fatal`
-- Formatted methods: `Debugf`, `Infof`, `Warnf`, `Errorf`, `Fatalf`
-- Context methods: `DebugCtx`, `InfoCtx`, `WarnCtx`, `ErrorCtx`, `FatalCtx`
+- Plus panic variants: `Panic`, `Panicf`, `PanicCtx`
+- Formatted methods: `Debugf`, `Infof`, `Warnf`, `Errorf`, `Fatalf`, `Panicf`
+- Context methods: `DebugCtx`, `InfoCtx`, `WarnCtx`, `ErrorCtx`, `FatalCtx`, `PanicCtx`
 
 Config options (`log.Config`):
-- `Level` (`Debug`, `Info`, `Warn`, `Error`, `Fatal`)
+- `Level` (`Debug`, `Info`, `Warn`, `Error`, `Fatal`, `Panic`)
 - `Format` (`text`, `json`)
 - `Color` (for text mode)
 - `EnableSourceTrace`
-- `EnableOTEL`
-- `Env`, `AppName`, `Version`
+- `Environment`, `AppName`, `Version`
 - `Writer` (`io.Writer`, stdout by default)
 - `TimeFormat`
 - `ExitFunc` (used by `Fatal*`)
@@ -132,9 +133,9 @@ Context example:
 ```go
 ctx := context.Background()
 ctx = log.WithRequestID(ctx, "req-123")
-ctx = log.WithRequestMetadata(ctx, log.String("route", "GET /health"))
+ctx = log.WithOtelTraceContext(ctx, "0123456789abcdef0123456789abcdef", "0123456789abcdef")
 
-l.InfoCtx(ctx, "request accepted")
+l.InfoCtx(ctx, "request accepted", log.String("route", "GET /health"))
 ```
 
 Also you can run logger examples:

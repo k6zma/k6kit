@@ -9,7 +9,7 @@ Design goals:
 - Keep call sites small and explicit (`Info`, `Infof`, `InfoCtx`, typed `Field` helpers)
 - Emit stable, parseable records in either text or JSON
 - Preserve deterministic field ordering and duplicate-key behavior
-- Support request metadata, optional source trace, and optional OTEL trace/span extraction
+- Support request and trace context enrichment with optional source trace
 - Stay safe under concurrent use by many goroutines
 
 ## Import and quick start
@@ -43,6 +43,19 @@ func main() {
 
 Interface: `log.Logger`
 
+Package-level default logger API:
+
+- `Default()` returns package-level logger instance
+- `SetDefault(l)` replaces package-level logger (nil is ignored)
+- Package-level wrappers delegate to `Default()`:
+  - `Debug/Info/Warn/Fatal`
+  - `Error/Panic`
+  - `Debugf/Infof/Warnf/Fatalf`
+  - `Errorf/Panicf`
+  - `DebugCtx/InfoCtx/WarnCtx/FatalCtx`
+  - `ErrorCtx/PanicCtx`
+  - `Enabled(ctx, level)`
+
 Levels:
 
 - `Debug(msg, fields...)`
@@ -50,6 +63,7 @@ Levels:
 - `Warn(msg, fields...)`
 - `Error(msg, fields...)`
 - `Fatal(msg, fields...)` (writes record, then calls `ExitFunc(1)`)
+- `Panic(msg, fields...)` (writes record, then panics)
 
 Formatted variants:
 
@@ -58,6 +72,7 @@ Formatted variants:
 - `Warnf(format, args...)`
 - `Errorf(format, args...)`
 - `Fatalf(format, args...)`
+- `Panicf(format, args...)`
 
 Context-aware variants:
 
@@ -66,13 +81,16 @@ Context-aware variants:
 - `WarnCtx(ctx, msg, fields...)`
 - `ErrorCtx(ctx, msg, fields...)`
 - `FatalCtx(ctx, msg, fields...)`
+- `PanicCtx(ctx, msg, fields...)`
 
 Other API:
 
 - `Enabled(ctx, level)` checks level gating
 - `With(fields...)` returns a child logger with persistent fields
-- `WithErr(err)` shorthand for `With(log.Error("error", err))`
+- `WithErr(err)` shorthand for `With(log.String("error", err.Error()))` (or empty string for nil)
 - `WithGroup(name)` returns a child logger with a group label
+- `WithRequestID(id)` returns a child logger with a fixed request id
+- `WithOtelTrace(traceID, spanID)` returns a child logger with fixed trace/span ids
 
 ## Configuration reference
 
@@ -80,7 +98,7 @@ Constructor: `log.New(log.Config)`
 
 Validation rules:
 
-- `Level` must be one of `LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`, `LevelFatal`
+- `Level` must be one of `LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`, `LevelFatal`, `LevelPanic`
 - `Format` must be `FormatText` or `FormatJSON`
 - Invalid values return error from `New`
 
@@ -92,8 +110,7 @@ Defaults (`log.DefaultConfig()`):
 | `Format` | `FormatText` | Output renderer |
 | `Color` | `false` | ANSI coloring for text mode only. |
 | `EnableSourceTrace` | `false` | Adds `source_trace` (JSON) or `[source]` block (text) |
-| `EnableOTEL` | `false` | Extracts `trace_id` and `span_id` from context span context |
-| `Env` | `""` | When non-empty, global `env` field on every record |
+| `Environment` | `""` | When non-empty, global `env` field on every record |
 | `AppName` | `""` | When non-empty, global `app` field on every record |
 | `Version` | `""` | When non-empty, global `version` field on every record |
 | `Writer` | `os.Stdout` | Destination `io.Writer` when nil in config |
@@ -104,9 +121,9 @@ Notes:
 
 - `Color` has no effect in JSON format
 - `TimeFormat` only changes top-level record time field formatting
-- `Env`, `AppName`, `Version` are injected as static attrs in this order: `app`, `env`, `version`
+- `Environment`, `AppName`, `Version` are injected as static attrs (`app`, `env`, `version`)
 
-## Levels behavior and ParseLevel
+## Levels behavior
 
 Supported level constants:
 
@@ -115,19 +132,14 @@ Supported level constants:
 - `LevelWarn`
 - `LevelError`
 - `LevelFatal`
+- `LevelPanic`
 
 Behavior:
 
 - Logger drops records below configured minimum level
 - `Enabled(ctx, level)` matches that level gate
 - Fatal methods log at `FATAL` and then call `ExitFunc(1)`
-
-`ParseLevel` behavior:
-
-- Accepts case-insensitive tokens: `debug`, `info`, `warn`, `error`, `fatal`
-- Trims surrounding whitespace before parsing
-- Rejects aliases such as `warning`
-- Returns `unsupported log level: "<input>"` for unknown values
+- Panic methods log at `PANIC` and then panic
 
 ## Output formats and field semantics
 
@@ -142,7 +154,7 @@ Shape:
 Semantics:
 
 - `time` always first, formatted by text `TimeFormat`
-- Optional OTEL block appears only when enabled and IDs exist in context
+- Optional OTEL block appears when trace/span IDs are available from context
 - Optional source block appears only when `EnableSourceTrace=true`
 - `group` is shown in its own bracket section
 - Attributes are flattened and rendered as `{key=value}` pairs in deterministic order
@@ -202,16 +214,13 @@ Scalar helpers:
 
 Slice helpers:
 
-- `Bytes`, `Strings`, `Runes`, `Bools`
-- `Ints`, `Int8s`, `Int16s`, `Int32s`, `Int64s`
-- `Uint8s`, `Uint16s`, `Uint32s`, `Uint64s`
-- `Float32s`, `Float64s`
-- `Errors` (`[]error`)
+- `[]Bytes`, `[]Strings`, `[]Runes`, `[]Bools`
+- `[]Ints`, `[]Int8s`, `[]Int16s`, `[]Int32s`, `[]Int64s`
+- `[]Uint8s`, `[]Uint16s`, `[]Uint32s`, `[]Uint64s`
+- `[]Float32s`, `[]Float64s`
 
-Error/group helpers:
+Group helper:
 
-- `Error(key, err)`
-- `Errors(key, []error)`
 - `Group(name, fields...)`
 
 Group flattening rule:
@@ -228,7 +237,7 @@ Group flattening rule:
 
 `WithErr(err)`:
 
-- Equivalent to `With(log.Error("error", err))`
+- Equivalent to `With(log.String("error", err.Error()))` (or empty string for nil)
 - Uses canonical key `error` by default
 
 `WithGroup(name)`:
@@ -245,12 +254,12 @@ Helpers:
 - `FromContext(ctx, fallback)` returns context logger, else fallback
 - `WithRequestID(ctx, id)` stores request id
 - `RequestID(ctx)` returns `(id, true)` only for non-empty ids
-- `WithRequestMetadata(ctx, fields...)` appends metadata fields
-- `RequestMetadata(ctx)` returns a defensive copy
+- `WithOtelTraceContext(ctx, traceID, spanID)` stores explicit trace/span ids in context
+- `OtelTraceFromContext(ctx)` returns explicit trace/span when present, otherwise reads OpenTelemetry span context
 
 Logging behavior:
 
-- Context-derived fields (`request_id`, request metadata, OTEL fields) are only considered for `*Ctx` methods
+ - Context-derived fields (`request_id`, OTEL `trace_id`/`span_id`) are only considered for `*Ctx` methods
 - Non-ctx methods (`Info`, `Warn`, etc.) log with `context.Background()`
 
 Example:
@@ -258,12 +267,12 @@ Example:
 ```go
 ctx := context.Background()
 ctx = log.WithRequestID(ctx, "req-123")
-ctx = log.WithRequestMetadata(ctx, log.String("tenant", "acme"))
+ctx = log.WithOtelTraceContext(ctx, "0123456789abcdef0123456789abcdef", "0123456789abcdef")
 
-l.InfoCtx(ctx, "checkout", log.Int("items", 2))
+l.InfoCtx(ctx, "checkout", log.Int("items", 2), log.String("tenant", "acme"))
 ```
 
-## Tracing (`EnableSourceTrace`, `EnableOTEL`)
+## Tracing (`EnableSourceTrace`, context OTEL)
 
 `EnableSourceTrace`:
 
@@ -271,17 +280,18 @@ l.InfoCtx(ctx, "checkout", log.Int("items", 2))
 - Uses short file name (base name), not full path
 - Omitted when disabled or if source cannot be resolved
 
-`EnableOTEL`:
+OTEL trace/span extraction:
 
-- Extracts `TraceID` and `SpanID` from `trace.SpanContextFromContext(ctx)`
+- Extracts `TraceID` and `SpanID` from `OtelTraceFromContext(ctx)`
+- `OtelTraceFromContext(ctx)` first checks `WithOtelTraceContext`, then falls back to `trace.SpanContextFromContext(ctx)`
 - Emits lowercase hex strings in `trace_id` and `span_id`
-- Omitted when disabled or when span context is invalid
+- Omitted when no explicit trace/span is present and span context is invalid
 
 Example:
 
 ```go
-l, _ := log.New(log.Config{Format: log.FormatJSON, EnableSourceTrace: true, EnableOTEL: true})
-ctx := trace.ContextWithSpanContext(context.Background(), spanCtx)
+l, _ := log.New(log.Config{Format: log.FormatJSON, EnableSourceTrace: true})
+ctx := log.WithOtelTraceContext(context.Background(), "0123456789abcdef0123456789abcdef", "0123456789abcdef")
 l.InfoCtx(ctx, "operation")
 ```
 
@@ -290,12 +300,12 @@ l.InfoCtx(ctx, "operation")
 - `error` values are serialized as message-only strings (`err.Error()`)
 - `nil` error serializes as empty string
 - `[]error` values serialize as `[]string`
-- This applies to `Error`, `Errors`, and `Any` if the underlying value type is `error` or `[]error`
+- This applies to any field value (`Any`, typed fields, or grouped fields) when the underlying value type is `error` or `[]error`
 
 Examples:
 
-- `log.Error("error", errors.New("boom"))` -> `"error":"boom"` (JSON) / `{error=boom}` (text)
-- `log.Errors("errors", []error{errors.New("e1"), nil})` -> `"errors":["e1",""]` (JSON)
+- `log.Any("error", errors.New("boom"))` -> `"error":"boom"` (JSON) / `{error=boom}` (text)
+- `log.Any("errors", []error{errors.New("e1"), nil})` -> `"errors":["e1",""]` (JSON)
 
 ## Ordering and dedup rules
 
@@ -304,19 +314,19 @@ Attribute merge order is deterministic:
 1. Static config attrs (`app`, `env`, `version` when set)
 2. Child logger attrs from `With(...)`
 3. Context request id (`request_id`)
-4. Context request metadata (`WithRequestMetadata` append order)
-5. Per-call attrs
+4. Per-call attrs
 
 Dedup semantics:
 
 - Empty keys are dropped
 - Duplicate keys are deduplicated by key
-- Last value wins, but key keeps first insertion position
+- Last value wins
+- Final attribute output is sorted lexicographically by key
 
 Example:
 
 - Input attrs: `dup=one`, `x=1`, `dup=two`
-- Output order: `dup`, `x`
+- Output order: `dup`, `x` (sorted by key)
 - Output values: `dup=two`, `x=1`
 
 ## Concurrency, thread safety, fatal behavior
@@ -330,6 +340,7 @@ Concurrency/thread safety:
 Fatal behavior and `ExitFunc`:
 
 - `Fatal`, `Fatalf`, `FatalCtx` write the record and then invoke `ExitFunc(1)`
+- `Panic`, `Panicf`, `PanicCtx` write the record and then panic
 - Default `ExitFunc` is `os.Exit`
 - In tests or controlled programs, set `ExitFunc` to a custom function to avoid process termination
 - Exit hook is called even if writer returns an error after handle attempt

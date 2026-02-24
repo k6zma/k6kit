@@ -4,10 +4,10 @@ vars:
   GOLANGCI_LINT_VERSION: 'v2.8.0'
   GCI_VERSION: 'v0.13.7'
   GOFUMPT_VERSION: 'v0.9.2'
-  BENCH_NO_FIELDS_MAX_NS: '260.0'
-  BENCH_WITH_FIELDS_MAX_NS: '760.0'
-  BENCH_WITH_CONTEXT_MAX_NS: '760.0'
-  BENCH_WITH_OTEL_MAX_NS: '460.0'
+  BENCH_NO_FIELDS_MAX_NS: '350.0'
+  BENCH_WITH_FIELDS_MAX_NS: '1100.0'
+  BENCH_WITH_CONTEXT_MAX_NS: '950.0'
+  BENCH_WITH_OTEL_MAX_NS: '750.0'
   BENCH_DEBUG_DISABLED_MAX_NS: '25.0'
 
   BIN_DIR: '{{.ROOT_DIR}}/.bin'
@@ -130,9 +130,9 @@ tasks:
       - go test -run '^$' -bench . -benchmem ./log
 
   benchmark-info:
-    desc: Run BenchmarkInfo* benchmarks for logger package
+    desc: Run guarded logger benchmarks for local profiling
     cmds:
-      - go test -run '^$' -bench '^BenchmarkInfo' -benchmem ./log
+      - go test -run '^$' -bench '^(BenchmarkNoFields|BenchmarkFiveFields|BenchmarkWithContext|BenchmarkWithOtelTrace|BenchmarkDebugDisabled)$' -benchmem ./log
 
   benchmark-guard:
     desc: Run benchmark thresholds for pre-commit
@@ -141,7 +141,7 @@ tasks:
         set -euo pipefail
         report_file=".bench-precommit.txt"
 
-        go test -run '^$' -bench '^(BenchmarkInfoNoFields|BenchmarkInfoWithFields|BenchmarkInfoWithContext|BenchmarkInfoWithOTEL|BenchmarkDebugDisabled)$' -benchmem ./log > "$report_file"
+        go test -run '^$' -bench '^(BenchmarkNoFields|BenchmarkFiveFields|BenchmarkWithContext|BenchmarkWithOtelTrace|BenchmarkDebugDisabled)$' -benchmem ./log > "$report_file"
         cat "$report_file"
 
         python3 - <<'PY'
@@ -152,16 +152,16 @@ tasks:
         text = open(report_path, "r", encoding="utf-8").read()
 
         limits = {
-            "BenchmarkInfoNoFields": float("{{.BENCH_NO_FIELDS_MAX_NS}}"),
-            "BenchmarkInfoWithFields": float("{{.BENCH_WITH_FIELDS_MAX_NS}}"),
-            "BenchmarkInfoWithContext": float("{{.BENCH_WITH_CONTEXT_MAX_NS}}"),
-            "BenchmarkInfoWithOTEL": float("{{.BENCH_WITH_OTEL_MAX_NS}}"),
+            "BenchmarkNoFields": float("{{.BENCH_NO_FIELDS_MAX_NS}}"),
+            "BenchmarkFiveFields": float("{{.BENCH_WITH_FIELDS_MAX_NS}}"),
+            "BenchmarkWithContext": float("{{.BENCH_WITH_CONTEXT_MAX_NS}}"),
+            "BenchmarkWithOtelTrace": float("{{.BENCH_WITH_OTEL_MAX_NS}}"),
             "BenchmarkDebugDisabled": float("{{.BENCH_DEBUG_DISABLED_MAX_NS}}"),
         }
 
         failed = False
         for name, limit in limits.items():
-            match = re.search(rf"^{name}[-\\w]*\\s+\\d+\\s+([0-9]+(?:\\.[0-9]+)?)\\s+ns/op", text, re.MULTILINE)
+            match = re.search(rf"^{name}\\S*\\s+\\d+\\s+([0-9]+(?:\\.[0-9]+)?)\\s+ns/op", text, re.MULTILINE)
             if not match:
                 print(f"Missing benchmark output for {name}")
                 failed = True

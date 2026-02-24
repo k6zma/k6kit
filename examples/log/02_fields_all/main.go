@@ -36,7 +36,7 @@ func main() {
 		log.Duration("duration", 2*time.Second),
 		log.Time("time", now),
 		log.Any("any", map[string]int{"k": 1}),
-		log.Error("error", errA),
+		log.Any("error", errA),
 		log.Bytes("bytes", []byte("bin")),
 		log.Strings("strings", []string{"a", "b"}),
 		log.Runes("runes", []rune{'x', 'y'}),
@@ -52,7 +52,7 @@ func main() {
 		log.Uint64s("uint64s", []uint64{64, 65}),
 		log.Float32s("float32s", []float32{3.1, 3.2}),
 		log.Float64s("float64s", []float64{6.1, 6.2}),
-		log.Errors("errors", []error{errA, errB}),
+		log.Any("errors", []error{errA, errB}),
 		log.Group("group", log.String("nested", "yes"), log.Int("count", 2)),
 	}
 
