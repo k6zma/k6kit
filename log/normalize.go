@@ -31,6 +31,24 @@ type normalizedRecord struct {
 	Attrs       []normalizedAttr
 }
 
+// normalizedAttrsByKey adapts normalized attributes
+type normalizedAttrsByKey []normalizedAttr
+
+// Len returns number of normalized attributes
+func (a normalizedAttrsByKey) Len() int {
+	return len(a)
+}
+
+// Less reports lexical order by attribute key
+func (a normalizedAttrsByKey) Less(i, j int) bool {
+	return a[i].Key < a[j].Key
+}
+
+// Swap exchanges two attribute positions
+func (a normalizedAttrsByKey) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
+}
+
 // normalizeRecord builds canonical record used by renderers
 func normalizeRecord(
 	ctx context.Context,
@@ -39,6 +57,9 @@ func normalizeRecord(
 	loggerAttrs []slog.Attr,
 	group string,
 	enableSource bool,
+	requestID string,
+	otel OtelTrace,
+	callAttrs []slog.Attr,
 ) normalizedRecord {
 	out := normalizedRecord{
 		Time:  rec.Time,
@@ -55,25 +76,61 @@ func normalizeRecord(
 		out.SourceTrace = sourceFromPC(rec.PC)
 	}
 
-	if ot, ok := OtelTraceFromContext(ctx); ok {
-		out.TraceID = ot.TraceID
-		out.SpanID = ot.SpanID
+	if otel.TraceID == "" && otel.SpanID == "" {
+		if ot, ok := OtelTraceFromContext(ctx); ok {
+			otel = ot
+		}
 	}
 
-	all := make([]normalizedAttr, 0, len(staticAttrs)+len(loggerAttrs)+rec.NumAttrs()+1)
+	if otel.TraceID != "" || otel.SpanID != "" {
+		out.TraceID = otel.TraceID
+		out.SpanID = otel.SpanID
+	}
+
+	estimated := len(staticAttrs) + len(loggerAttrs) + len(callAttrs)
+	if len(callAttrs) == 0 {
+		estimated += rec.NumAttrs()
+	}
+
+	if requestID != "" {
+		estimated++
+	}
+
+	var all []normalizedAttr
+
+	if estimated > 0 {
+		all = make([]normalizedAttr, 0, estimated)
+	}
 
 	all = appendFlattened(all, staticAttrs)
 	all = appendFlattened(all, loggerAttrs)
 
-	if rid, ok := RequestID(ctx); ok {
+	rid := requestID
+	if rid == "" {
+		if fromCtx, ok := RequestID(ctx); ok {
+			rid = fromCtx
+		}
+	}
+
+	if rid != "" {
 		all = append(all, normalizedAttr{Key: keyRequestID, Value: rid})
 	}
 
-	rec.Attrs(func(a slog.Attr) bool {
-		all = flattenAttr(all, "", a)
+	if len(callAttrs) > 0 {
+		all = appendFlattened(all, callAttrs)
+	} else {
+		rec.Attrs(func(a slog.Attr) bool {
+			all = flattenAttr(all, nil, a)
 
-		return true
-	})
+			return true
+		})
+	}
+
+	if attrsAlreadyCanonical(all) {
+		out.Attrs = all
+
+		return out
+	}
 
 	out.Attrs = dedupAndSort(all)
 
@@ -83,14 +140,14 @@ func normalizeRecord(
 // appendFlattened flattens attrs into dst using dot notation for groups
 func appendFlattened(dst []normalizedAttr, attrs []slog.Attr) []normalizedAttr {
 	for _, a := range attrs {
-		dst = flattenAttr(dst, "", a)
+		dst = flattenAttr(dst, nil, a)
 	}
 
 	return dst
 }
 
 // flattenAttr flattens one attribute recursively
-func flattenAttr(dst []normalizedAttr, prefix string, a slog.Attr) []normalizedAttr {
+func flattenAttr(dst []normalizedAttr, path []string, a slog.Attr) []normalizedAttr {
 	a.Value = a.Value.Resolve()
 
 	if a.Equal(slog.Attr{}) {
@@ -98,13 +155,13 @@ func flattenAttr(dst []normalizedAttr, prefix string, a slog.Attr) []normalizedA
 	}
 
 	if a.Value.Kind() == slog.KindGroup {
-		nextPrefix := prefix
+		nextPath := path
 		if a.Key != "" {
-			nextPrefix = joinKey(prefix, a.Key)
+			nextPath = append(nextPath, a.Key)
 		}
 
 		for _, child := range a.Value.Group() {
-			dst = flattenAttr(dst, nextPrefix, child)
+			dst = flattenAttr(dst, nextPath, child)
 		}
 
 		return dst
@@ -114,11 +171,34 @@ func flattenAttr(dst []normalizedAttr, prefix string, a slog.Attr) []normalizedA
 		return dst
 	}
 
-	return append(dst, normalizedAttr{Key: joinKey(prefix, a.Key), Value: normalizedValue(a.Value.Any())})
+	return append(dst, normalizedAttr{Key: joinPathKey(path, a.Key), Value: normalizedValue(a.Value)})
 }
 
 // normalizedValue normalizes special payload types
-func normalizedValue(v any) any {
+func normalizedValue(v slog.Value) any {
+	switch v.Kind() {
+	case slog.KindBool:
+		return v.Bool()
+	case slog.KindDuration:
+		return v.Duration()
+	case slog.KindFloat64:
+		return v.Float64()
+	case slog.KindInt64:
+		return v.Int64()
+	case slog.KindString:
+		return v.String()
+	case slog.KindTime:
+		return v.Time()
+	case slog.KindUint64:
+		return v.Uint64()
+	case slog.KindAny:
+		return normalizedAny(v.Any())
+	default:
+		return normalizedAny(v.Any())
+	}
+}
+
+func normalizedAny(v any) any {
 	switch t := v.(type) {
 	case error:
 		if t == nil {
@@ -127,17 +207,36 @@ func normalizedValue(v any) any {
 
 		return t.Error()
 	case []error:
-		out := make([]string, len(t))
-		for i := range t {
-			if t[i] != nil {
-				out[i] = t[i].Error()
-			}
-		}
-
-		return out
+		return t
 	default:
 		return t
 	}
+}
+
+func joinPathKey(path []string, key string) string {
+	if len(path) == 0 {
+		return key
+	}
+
+	total := len(key) + len(path)
+	for i := range path {
+		total += len(path[i])
+	}
+
+	b := make([]byte, 0, total)
+
+	for i := range path {
+		if i > 0 {
+			b = append(b, '.')
+		}
+
+		b = append(b, path[i]...)
+	}
+
+	b = append(b, '.')
+	b = append(b, key...)
+
+	return string(b)
 }
 
 // dedupAndSort drops empty keys, keeps last value, and sorts by key
@@ -146,38 +245,58 @@ func dedupAndSort(attrs []normalizedAttr) []normalizedAttr {
 		return nil
 	}
 
-	m := make(map[string]normalizedAttr, len(attrs))
-	keys := make([]string, 0, len(attrs))
-
+	filtered := attrs[:0]
 	for _, kv := range attrs {
 		if strings.TrimSpace(kv.Key) == "" {
 			continue
 		}
 
-		if _, ok := m[kv.Key]; !ok {
-			keys = append(keys, kv.Key)
+		filtered = append(filtered, kv)
+	}
+
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	sort.Stable(normalizedAttrsByKey(filtered))
+
+	write := 0
+
+	for i := 0; i < len(filtered); {
+		j := i + 1
+		for j < len(filtered) && filtered[j].Key == filtered[i].Key {
+			j++
 		}
 
-		m[kv.Key] = kv
+		filtered[write] = filtered[j-1]
+		write++
+		i = j
 	}
 
-	sort.Strings(keys)
-
-	out := make([]normalizedAttr, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, m[key])
-	}
-
-	return out
+	return filtered[:write]
 }
 
-// joinKey joins prefix and key with dot separator
-func joinKey(prefix, key string) string {
-	if prefix == "" {
-		return key
+func attrsAlreadyCanonical(attrs []normalizedAttr) bool {
+	if len(attrs) == 0 {
+		return true
 	}
 
-	return prefix + "." + key
+	prev := ""
+
+	for i := range attrs {
+		key := attrs[i].Key
+		if strings.TrimSpace(key) == "" {
+			return false
+		}
+
+		if i > 0 && key <= prev {
+			return false
+		}
+
+		prev = key
+	}
+
+	return true
 }
 
 // sourceFromPC resolves source trace from program counter

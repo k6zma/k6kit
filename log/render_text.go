@@ -169,6 +169,20 @@ func appendTextValue(dst []byte, v any) []byte {
 		return strconv.AppendFloat(dst, float64(t), 'g', -1, 32)
 	case float64:
 		return strconv.AppendFloat(dst, t, 'g', -1, 64)
+	case []error:
+		dst = append(dst, '[')
+
+		for i := range t {
+			if i > 0 {
+				dst = append(dst, ' ')
+			}
+
+			if t[i] != nil {
+				dst = append(dst, t[i].Error()...)
+			}
+		}
+
+		return append(dst, ']')
 	default:
 		return append(dst, fmt.Sprint(v)...)
 	}

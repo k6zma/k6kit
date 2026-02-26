@@ -4,11 +4,16 @@ vars:
   GOLANGCI_LINT_VERSION: 'v2.8.0'
   GCI_VERSION: 'v0.13.7'
   GOFUMPT_VERSION: 'v0.9.2'
-  BENCH_NO_FIELDS_MAX_NS: '350.0'
-  BENCH_WITH_FIELDS_MAX_NS: '1100.0'
-  BENCH_WITH_CONTEXT_MAX_NS: '950.0'
-  BENCH_WITH_OTEL_MAX_NS: '750.0'
-  BENCH_DEBUG_DISABLED_MAX_NS: '25.0'
+  BENCH_NO_FIELDS_JSON_MAX_NS: '380.0'
+  BENCH_NO_FIELDS_TEXT_MAX_NS: '220.0'
+  BENCH_WITH_FIELDS_JSON_MAX_NS: '900.0'
+  BENCH_WITH_FIELDS_TEXT_MAX_NS: '650.0'
+  BENCH_WITH_CONTEXT_JSON_MAX_NS: '850.0'
+  BENCH_WITH_CONTEXT_TEXT_MAX_NS: '450.0'
+  BENCH_WITH_OTEL_JSON_MAX_NS: '700.0'
+  BENCH_WITH_OTEL_TEXT_MAX_NS: '380.0'
+  BENCH_DEBUG_DISABLED_JSON_MAX_NS: '30.0'
+  BENCH_DEBUG_DISABLED_TEXT_MAX_NS: '30.0'
 
   BIN_DIR: '{{.ROOT_DIR}}/.bin'
   GOLANGCI_LINT: '{{.BIN_DIR}}/golangci-lint'
@@ -152,16 +157,21 @@ tasks:
         text = open(report_path, "r", encoding="utf-8").read()
 
         limits = {
-            "BenchmarkNoFields": float("{{.BENCH_NO_FIELDS_MAX_NS}}"),
-            "BenchmarkFiveFields": float("{{.BENCH_WITH_FIELDS_MAX_NS}}"),
-            "BenchmarkWithContext": float("{{.BENCH_WITH_CONTEXT_MAX_NS}}"),
-            "BenchmarkWithOtelTrace": float("{{.BENCH_WITH_OTEL_MAX_NS}}"),
-            "BenchmarkDebugDisabled": float("{{.BENCH_DEBUG_DISABLED_MAX_NS}}"),
+            "BenchmarkNoFields/json": float("{{.BENCH_NO_FIELDS_JSON_MAX_NS}}"),
+            "BenchmarkNoFields/text": float("{{.BENCH_NO_FIELDS_TEXT_MAX_NS}}"),
+            "BenchmarkFiveFields/json": float("{{.BENCH_WITH_FIELDS_JSON_MAX_NS}}"),
+            "BenchmarkFiveFields/text": float("{{.BENCH_WITH_FIELDS_TEXT_MAX_NS}}"),
+            "BenchmarkWithContext/json": float("{{.BENCH_WITH_CONTEXT_JSON_MAX_NS}}"),
+            "BenchmarkWithContext/text": float("{{.BENCH_WITH_CONTEXT_TEXT_MAX_NS}}"),
+            "BenchmarkWithOtelTrace/json": float("{{.BENCH_WITH_OTEL_JSON_MAX_NS}}"),
+            "BenchmarkWithOtelTrace/text": float("{{.BENCH_WITH_OTEL_TEXT_MAX_NS}}"),
+            "BenchmarkDebugDisabled/json": float("{{.BENCH_DEBUG_DISABLED_JSON_MAX_NS}}"),
+            "BenchmarkDebugDisabled/text": float("{{.BENCH_DEBUG_DISABLED_TEXT_MAX_NS}}"),
         }
 
         failed = False
         for name, limit in limits.items():
-            match = re.search(rf"^{name}\\S*\\s+\\d+\\s+([0-9]+(?:\\.[0-9]+)?)\\s+ns/op", text, re.MULTILINE)
+            match = re.search(rf"^{re.escape(name)}-\\d+\\s+\\d+\\s+([0-9]+(?:\\.[0-9]+)?)\\s+ns/op", text, re.MULTILINE)
             if not match:
                 print(f"Missing benchmark output for {name}")
                 failed = True

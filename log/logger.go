@@ -182,8 +182,6 @@ func (l *slogLogger) logf(ctx context.Context, level Level, format string, args 
 func (l *slogLogger) log(ctx context.Context, level Level, msg string, fields ...Field) {
 	ctx = normalizeContext(ctx)
 
-	ctx = l.bindContextValues(ctx)
-
 	sl := level.slogLevel()
 	if !l.s.Enabled(ctx, sl) {
 		return
@@ -192,17 +190,31 @@ func (l *slogLogger) log(ctx context.Context, level Level, msg string, fields ..
 	pc := uintptr(0)
 
 	if l.srcTrace {
-		pcs := make([]uintptr, 1)
-		runtime.Callers(3, pcs)
+		var pcs [1]uintptr
+		runtime.Callers(3, pcs[:])
 		pc = pcs[0]
 	}
 
 	rec := slog.NewRecord(time.Now(), sl, msg, pc)
-	for _, f := range fields {
-		rec.AddAttrs(f)
-	}
 
-	if err := l.s.Handler().Handle(ctx, rec); err != nil {
+	err := func() error {
+		if h, ok := l.s.Handler().(*pipelineHandler); ok {
+			return h.handleWithBound(ctx, rec, l.request, l.otel, fields)
+		}
+
+		ctx = l.bindContextValues(ctx)
+
+		if len(fields) > 0 {
+			attrs := make([]slog.Attr, len(fields))
+
+			copy(attrs, fields)
+
+			rec.AddAttrs(attrs...)
+		}
+
+		return l.s.Handler().Handle(ctx, rec)
+	}()
+	if err != nil {
 		_ = err
 	}
 

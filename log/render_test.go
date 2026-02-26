@@ -1,6 +1,7 @@
 package log
 
 import (
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -77,5 +78,31 @@ func TestJSONRendererNonFiniteFloatsFallbackToNull(t *testing.T) {
 		assert.Nil(t, obj["nan"])
 		assert.Nil(t, obj["pos_inf"])
 		assert.Nil(t, obj["neg_inf"])
+	})
+}
+
+func TestRendererErrorSliceSemantics(t *testing.T) {
+	t.Run(testCaseName(testPrefixRender, "error-slice-semantics", 3), func(t *testing.T) {
+		r := jsonRenderer{timeFormat: defaultJSONTimeFormat}
+		rec := normalizedRecord{
+			Time:  time.Unix(1700000000, 0),
+			Level: levelLabelInfo,
+			Msg:   "errs",
+			Attrs: []normalizedAttr{{Key: "errors", Value: []error{errors.New("e1"), nil}}},
+		}
+
+		out, err := r.render(nil, rec)
+		require.NoError(t, err)
+
+		obj := parseJSONLine(t, string(out))
+		errs, ok := obj["errors"].([]any)
+		require.True(t, ok)
+		require.Len(t, errs, 2)
+		assert.Equal(t, "e1", errs[0])
+		assert.Equal(t, "", errs[1])
+
+		plain, err := (textRenderer{color: false, timeFormat: defaultTextTimeFormat}).render(nil, rec)
+		require.NoError(t, err)
+		assert.Contains(t, string(plain), "{errors=[e1 ]}")
 	})
 }

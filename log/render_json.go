@@ -2,6 +2,7 @@ package log
 
 import (
 	"math"
+	"sort"
 	"strconv"
 
 	"github.com/bytedance/sonic"
@@ -20,7 +21,9 @@ func (r jsonRenderer) render(dst []byte, rec normalizedRecord) ([]byte, error) {
 	dst = append(dst, keyTime...)
 	dst = append(dst, `":`...)
 
-	dst = strconv.AppendQuote(dst, rec.Time.Format(r.timeFormat))
+	dst = append(dst, '"')
+	dst = rec.Time.AppendFormat(dst, r.timeFormat)
+	dst = append(dst, '"')
 
 	if rec.TraceID != "" {
 		dst = append(dst, `,"`...)
@@ -144,9 +147,101 @@ func appendJSONPrimitive(dst []byte, v any) ([]byte, bool) {
 		}
 
 		return strconv.AppendFloat(dst, t, 'g', -1, 64), true
+	case []string:
+		return appendJSONStringArray(dst, t), true
+	case []int:
+		return appendJSONIntArray(dst, t), true
+	case map[string]string:
+		return appendJSONMapStringString(dst, t), true
+	case []error:
+		return appendJSONErrorArray(dst, t), true
 	default:
 		return dst, false
 	}
+}
+
+func appendJSONStringArray(dst []byte, arr []string) []byte {
+	dst = append(dst, '[')
+
+	for i := range arr {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+
+		dst = strconv.AppendQuote(dst, arr[i])
+	}
+
+	dst = append(dst, ']')
+
+	return dst
+}
+
+func appendJSONIntArray(dst []byte, arr []int) []byte {
+	dst = append(dst, '[')
+
+	for i := range arr {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+
+		dst = strconv.AppendInt(dst, int64(arr[i]), 10)
+	}
+
+	dst = append(dst, ']')
+
+	return dst
+}
+
+func appendJSONMapStringString(dst []byte, m map[string]string) []byte {
+	dst = append(dst, '{')
+	if len(m) == 0 {
+		dst = append(dst, '}')
+
+		return dst
+	}
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for i := range keys {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+
+		k := keys[i]
+		dst = strconv.AppendQuote(dst, k)
+		dst = append(dst, ':')
+		dst = strconv.AppendQuote(dst, m[k])
+	}
+
+	dst = append(dst, '}')
+
+	return dst
+}
+
+func appendJSONErrorArray(dst []byte, arr []error) []byte {
+	dst = append(dst, '[')
+
+	for i := range arr {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+
+		msg := ""
+		if arr[i] != nil {
+			msg = arr[i].Error()
+		}
+
+		dst = strconv.AppendQuote(dst, msg)
+	}
+
+	dst = append(dst, ']')
+
+	return dst
 }
 
 // isCanonicalKey reports whether key belongs to reserved top level keys

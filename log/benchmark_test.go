@@ -408,3 +408,24 @@ func BenchmarkDebugDisabled(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkDebugDisabledWithEnabledGuard(b *testing.B) {
+	benchmarkFormats(b, func(b *testing.B, format Format) {
+		out := &benchmarkBlackhole{}
+		l := benchmarkLogger(b, format, LevelWarn, out)
+		ctx := context.Background()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			if l.Enabled(ctx, LevelDebug) {
+				l.Debug("debug-disabled-guard", String("k", strconv.Itoa(i)))
+			}
+		}
+
+		if out.WriteCount() != 0 {
+			b.Fatalf("guarded disabled path must not write: got=%d", out.WriteCount())
+		}
+	})
+}
