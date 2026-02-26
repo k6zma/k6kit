@@ -74,7 +74,12 @@ func (h *pipelineHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 // Handle normalizes record, renders it and writes
 func (h *pipelineHandler) Handle(ctx context.Context, rec slog.Record) error {
-	norm := normalizeRecord(ctx, rec, h.staticAttrs, h.loggerAttrs, h.group, h.enableSource)
+	return h.handleWithBound(ctx, rec, "", OtelTrace{}, nil)
+}
+
+// handleWithBound runs the core handler pipeline with optional bound logger metadata
+func (h *pipelineHandler) handleWithBound(ctx context.Context, rec slog.Record, requestID string, otel OtelTrace, callAttrs []slog.Attr) error {
+	norm := normalizeRecord(ctx, rec, h.staticAttrs, h.loggerAttrs, h.group, h.enableSource, requestID, otel, callAttrs)
 
 	bp := h.bufPool.Get().(*[]byte)
 	b := (*bp)[:0]
